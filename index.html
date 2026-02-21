@@ -1,14 +1,397 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>The Happiness School</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FYERS Authentication - Auto Capture</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            max-width: 600px;
+            width: 100%;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        
+        .logo {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .logo h1 {
+            color: #333;
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+        
+        .logo p {
+            color: #666;
+            font-size: 14px;
+        }
+        
+        .status-box {
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 25px;
+            margin: 20px 0;
+            border-left: 4px solid #007bff;
+        }
+        
+        .status-box.processing {
+            border-left-color: #ffc107;
+            background: #fffbeb;
+        }
+        
+        .status-box.success {
+            border-left-color: #28a745;
+            background: #e8f5e9;
+        }
+        
+        .status-box.error {
+            border-left-color: #dc3545;
+            background: #ffebee;
+        }
+        
+        .status-title {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 10px;
+            color: #333;
+        }
+        
+        .status-message {
+            font-size: 14px;
+            color: #666;
+            line-height: 1.6;
+        }
+        
+        .code-display {
+            background: #2d3748;
+            color: #68d391;
+            font-family: 'Courier New', monospace;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+            word-break: break-all;
+            font-size: 12px;
+            max-height: 100px;
+            overflow-y: auto;
+        }
+        
+        .copy-btn {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-top: 10px;
+            transition: background 0.3s;
+        }
+        
+        .copy-btn:hover {
+            background: #0056b3;
+        }
+        
+        .spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #007bff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 10px;
+            vertical-align: middle;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .instructions {
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #e0e0e0;
+        }
+        
+        .instructions h3 {
+            font-size: 16px;
+            margin-bottom: 15px;
+            color: #333;
+        }
+        
+        .instructions ol {
+            padding-left: 20px;
+            color: #555;
+            font-size: 14px;
+            line-height: 1.8;
+        }
+        
+        .instructions li {
+            margin-bottom: 8px;
+        }
+        
+        .hidden {
+            display: none;
+        }
+        
+        .webhook-status {
+            margin-top: 15px;
+            padding: 10px;
+            border-radius: 6px;
+            font-size: 13px;
+        }
+        
+        .webhook-status.success {
+            background: #d4edda;
+            color: #155724;
+        }
+        
+        .webhook-status.error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+    </style>
 </head>
 <body>
-<script>
+    <div class="container">
+        <div class="logo">
+            <h1>🔐 FYERS Authentication</h1>
+            <p>Automatic Auth Code Capture & Forward</p>
+        </div>
+        
+        <div id="statusBox" class="status-box processing">
+            <div class="status-title">
+                <span id="spinner" class="spinner"></span>
+                <span id="statusTitle">Processing...</span>
+            </div>
+            <div id="statusMessage" class="status-message">
+                Checking URL for authentication code...
+            </div>
+            <div id="codeDisplay" class="code-display hidden"></div>
+            <button id="copyBtn" class="copy-btn hidden" onclick="copyCode()">Copy Code</button>
+            <div id="webhookStatus" class="webhook-status hidden"></div>
+        </div>
+        
+        <div class="instructions">
+            <h3>📋 Instructions</h3>
+            <ol>
+                <li>This page automatically captures the auth code from the URL</li>
+                <li>If local server is running, it will auto-send the code</li>
+                <li>If auto-send fails, copy the code manually and paste it in the notebook</li>
+                <li>Run <code>auth.login(auth_code="your_code")</code> in the notebook</li>
+            </ol>
+        </div>
+    </div>
 
-    
-</script>
+    <script>
+        // Configuration
+        const LOCAL_SERVER_URL = 'http://localhost:8765/auth';  // Local server to receive auth code
+        const NOTEBOOK_WEBSOCKET = 'ws://localhost:8766';  // Optional WebSocket for real-time communication
+        
+        // Parse URL parameters
+        function getUrlParams() {
+            const params = new URLSearchParams(window.location.search);
+            return {
+                s: params.get('s'),
+                code: params.get('code'),
+                auth_code: params.get('auth_code'),
+                state: params.get('state'),
+                zx: params.get('zx')
+            };
+        }
+        
+        // Update status display
+        function updateStatus(title, message, type, showCode = false, code = '') {
+            const statusBox = document.getElementById('statusBox');
+            const statusTitle = document.getElementById('statusTitle');
+            const statusMessage = document.getElementById('statusMessage');
+            const codeDisplay = document.getElementById('codeDisplay');
+            const copyBtn = document.getElementById('copyBtn');
+            const spinner = document.getElementById('spinner');
+            
+            // Remove all status classes
+            statusBox.classList.remove('processing', 'success', 'error');
+            statusBox.classList.add(type);
+            
+            statusTitle.textContent = title;
+            statusMessage.innerHTML = message;
+            
+            if (showCode && code) {
+                codeDisplay.textContent = code;
+                codeDisplay.classList.remove('hidden');
+                copyBtn.classList.remove('hidden');
+            } else {
+                codeDisplay.classList.add('hidden');
+                copyBtn.classList.add('hidden');
+            }
+            
+            if (type === 'success' || type === 'error') {
+                spinner.style.display = 'none';
+            }
+        }
+        
+        // Copy code to clipboard
+        function copyCode() {
+            const code = document.getElementById('codeDisplay').textContent;
+            navigator.clipboard.writeText(code).then(() => {
+                const btn = document.getElementById('copyBtn');
+                btn.textContent = 'Copied!';
+                setTimeout(() => {
+                    btn.textContent = 'Copy Code';
+                }, 2000);
+            });
+        }
+        
+        // Send auth code to local server
+        async function sendToLocalServer(authCode) {
+            const webhookStatus = document.getElementById('webhookStatus');
+            webhookStatus.classList.remove('hidden');
+            
+            try {
+                // Try to send to local HTTP server
+                const response = await fetch(LOCAL_SERVER_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        auth_code: authCode,
+                        timestamp: new Date().toISOString()
+                    })
+                });
+                
+                if (response.ok) {
+                    webhookStatus.textContent = '✅ Auto-sent to notebook successfully!';
+                    webhookStatus.classList.add('success');
+                    return true;
+                } else {
+                    throw new Error('Server returned ' + response.status);
+                }
+            } catch (error) {
+                // Local server not available - this is expected if user hasn't started it
+                webhookStatus.innerHTML = 
+                    'ℹ️ Auto-send not available.<br>' +
+                    'Please copy the code above and paste it in the notebook cell.';
+                webhookStatus.classList.add('error');
+                return false;
+            }
+        }
+        
+        // Try WebSocket connection as alternative
+        function tryWebSocket(authCode) {
+            try {
+                const ws = new WebSocket(NOTEBOOK_WEBSOCKET);
+                
+                ws.onopen = function() {
+                    ws.send(JSON.stringify({
+                        type: 'auth_code',
+                        auth_code: authCode
+                    }));
+                };
+                
+                ws.onmessage = function(event) {
+                    const response = JSON.parse(event.data);
+                    if (response.status === 'success') {
+                        updateStatus(
+                            '✅ Authentication Complete',
+                            'Auth code sent to notebook via WebSocket. You can close this window.',
+                            'success',
+                            true,
+                            authCode
+                        );
+                    }
+                    ws.close();
+                };
+                
+                ws.onerror = function() {
+                    // WebSocket not available, fallback to manual copy
+                    console.log('WebSocket not available, using manual copy fallback');
+                };
+                
+            } catch (e) {
+                console.log('WebSocket error:', e);
+            }
+        }
+        
+        // Main processing
+        async function processAuth() {
+            const params = getUrlParams();
+            
+            // Check if auth_code is present
+            if (params.auth_code) {
+                const authCode = params.auth_code;
+                
+                updateStatus(
+                    '✅ Auth Code Captured',
+                    'Authentication code successfully captured from URL. Sending to notebook...',
+                    'processing',
+                    true,
+                    authCode
+                );
+                
+                // Try to send to local server
+                const sent = await sendToLocalServer(authCode);
+                
+                if (sent) {
+                    updateStatus(
+                        '✅ Authentication Complete',
+                        'Auth code has been automatically sent to your notebook. You can close this window.',
+                        'success',
+                        true,
+                        authCode
+                    );
+                } else {
+                    updateStatus(
+                        '✅ Auth Code Captured',
+                        'Please copy the code below and paste it in the notebook cell:<br>' +
+                        '<code>auth.login(auth_code="YOUR_CODE_HERE")</code>',
+                        'success',
+                        true,
+                        authCode
+                    );
+                }
+                
+                // Also try WebSocket as backup
+                tryWebSocket(authCode);
+                
+            } else if (params.s === 'error' || params.code !== '200') {
+                updateStatus(
+                    '❌ Authentication Failed',
+                    'The authentication was not successful. Please try again.',
+                    'error'
+                );
+            } else {
+                updateStatus(
+                    '⚠️ No Auth Code Found',
+                    'No authentication code was found in the URL. Please make sure you completed the FYERS authorization process.',
+                    'error'
+                );
+            }
+        }
+        
+        // Run on page load
+        window.onload = processAuth;
+    </script>
 </body>
 </html>
-
